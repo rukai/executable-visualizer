@@ -1,4 +1,4 @@
-use crate::sections::{ExecutableFile, Section};
+use crate::sections::{ExecutableFile, FileNode};
 use egui::*;
 use std::vec;
 
@@ -173,7 +173,7 @@ pub fn ui(ui: &mut egui::Ui, options: &mut Options, files: &mut [ExecutableFile]
             canvas.max.y = f32::INFINITY;
             let response = ui.interact(canvas, ui.id(), Sense::click_and_drag());
 
-            let (min_bytes, max_bytes) = (0, 100);
+            let (min_bytes, max_bytes) = (0, 4000);
 
             let info = Info {
                 ctx: ui.ctx().clone(),
@@ -439,7 +439,7 @@ fn grid_text(bytes: i64) -> String {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn paint_record(info: &Info, options: &mut Options, top_y: f32, section: &Section) -> PaintResult {
+fn paint_record(info: &Info, options: &mut Options, top_y: f32, section: &FileNode) -> PaintResult {
     let start_x = info.point_from_bytes(options, section.bytes_start);
     let stop_x = info.point_from_bytes(options, section.bytes_end);
     if info.canvas.max.x < start_x
@@ -531,7 +531,7 @@ fn paint_scope(
     options: &mut Options,
     depth: usize,
     min_y: f32,
-    section: &Section,
+    section: &FileNode,
 ) -> PaintResult {
     let top_y = min_y + (depth as f32) * (options.rect_height + options.spacing);
 
@@ -551,7 +551,7 @@ fn paint_scope(
     result
 }
 
-fn paint_section_details(ui: &mut Ui, section: &Section) {
+fn paint_section_details(ui: &mut Ui, section: &FileNode) {
     egui::Grid::new("section_details_tooltip")
         .num_columns(2)
         .show(ui, |ui| {
