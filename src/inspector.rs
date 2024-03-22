@@ -130,22 +130,6 @@ impl Info {
 
 /// Show the Inspector.
 pub fn ui(ui: &mut egui::Ui, options: &mut Options, files: &mut [ExecutableFile]) {
-    let mut reset_view = false;
-
-    let num_frames = 100;
-
-    {
-        // reset view if number of selected frames changes (and we are viewing all of them):
-        let num_frames_id = ui.id().with("num_frames");
-        let num_frames_last_frame =
-            ui.memory_mut(|m| m.data.get_temp::<usize>(num_frames_id).unwrap_or_default());
-
-        if num_frames_last_frame != num_frames {
-            reset_view = true;
-        }
-        ui.memory_mut(|m| m.data.insert_temp(num_frames_id, num_frames));
-    }
-
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
@@ -173,7 +157,12 @@ pub fn ui(ui: &mut egui::Ui, options: &mut Options, files: &mut [ExecutableFile]
             canvas.max.y = f32::INFINITY;
             let response = ui.interact(canvas, ui.id(), Sense::click_and_drag());
 
-            let (min_bytes, max_bytes) = (0, 4000);
+            let min_bytes = 0;
+            let max_bytes = files
+                .iter()
+                .map(|file| file.root.bytes_end)
+                .max()
+                .unwrap_or(100);
 
             let info = Info {
                 ctx: ui.ctx().clone(),
@@ -185,13 +174,6 @@ pub fn ui(ui: &mut egui::Ui, options: &mut Options, files: &mut [ExecutableFile]
                 stop_bytes: max_bytes,
                 font_id: TextStyle::Body.resolve(ui.style()),
             };
-
-            if reset_view {
-                options.zoom_to_relative_bytes_range = Some((
-                    info.ctx.input(|i| i.time),
-                    (0, info.stop_bytes - info.start_bytes),
-                ));
-            }
 
             interact_with_canvas(options, &info.response, &info);
 
@@ -225,21 +207,21 @@ fn ui_canvas(
         options.zoom_to_relative_bytes_range = None;
     }
 
-    // We paint the threads top-down
+    // We paint the binaries top-down
     let mut cursor_y = info.canvas.top();
     cursor_y += info.text_height; // Leave room for time labels
 
     for file in files {
-        // Visual separator between threads:
+        // Visual separator between binaries:
         cursor_y += 2.0;
         let line_y = cursor_y;
         cursor_y += 2.0;
 
         let text_pos = pos2(info.canvas.min.x, cursor_y);
 
-        paint_thread_info(info, file, text_pos);
+        paint_binary_info(info, file, text_pos);
 
-        // draw on top of thread info background:
+        // draw on top of binary info background:
         info.painter.line_segment(
             [
                 pos2(info.canvas.min.x, line_y),
@@ -256,7 +238,7 @@ fn ui_canvas(
             let max_depth = 10;
             cursor_y += max_depth as f32 * (options.rect_height + options.spacing);
         }
-        cursor_y += info.text_height; // Extra spacing between threads
+        cursor_y += info.text_height; // Extra spacing between binaries
     }
 
     cursor_y
@@ -565,7 +547,7 @@ fn paint_section_details(ui: &mut Ui, section: &FileNode) {
         });
 }
 
-fn paint_thread_info(info: &Info, file: &mut ExecutableFile, pos: Pos2) {
+fn paint_binary_info(info: &Info, file: &mut ExecutableFile, pos: Pos2) {
     let collapsed_symbol = if file.inspector_collapsed {
         "⏵"
     } else {
