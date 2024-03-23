@@ -235,7 +235,7 @@ fn ui_canvas(
         if !file.inspector_collapsed {
             paint_scope(info, options, 0, cursor_y, &file.root);
 
-            let max_depth = 10;
+            let max_depth = 6;
             cursor_y += max_depth as f32 * (options.rect_height + options.spacing);
         }
         cursor_y += info.text_height; // Extra spacing between binaries
