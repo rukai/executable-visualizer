@@ -1,0 +1,16 @@
+[package]
+name = "executable-visualizer"
+version = "0.1.0"
+description = "Visualize whats taking up space in an executable"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+egui = { version = "0.26.1" }
+eframe = { version = "0.26.0" }
+serde = { version = "1.0", features = ["derive"], optional = true }
+goblin = "0.8.0"
+
+[dev-dependencies]
