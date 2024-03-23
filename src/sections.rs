@@ -37,11 +37,24 @@ impl ExecutableFile {
         // The program headers will point at parts of the file, telling the os which parts to load into specific locations in memory.
         // We dont parse or take that into account at all since that is just a subset of the data defined by the elf sections.
 
+        let section_headers = SectionHeader::from_bytes(
+            &file_bytes[header.e_shoff as usize..],
+            header.e_shnum as usize,
+        );
+        let str_table_header = section_headers[header.e_shstrndx as usize];
+        let str_table_start = str_table_header.sh_offset as usize;
+        let str_table_end = str_table_start + str_table_header.sh_size as usize;
+        let section_name_table = parse_str_table(&file_bytes[str_table_start..str_table_end]);
+
         // These headers are usually at the very end of the file
         let section_headers_start = header.e_shoff as i64;
         for i in 0..header.e_shnum {
+            let name = section_name_table
+                .get(i as usize)
+                .cloned()
+                .unwrap_or_else(|| "Unnamed section".to_owned());
             children.push(FileNode {
-                name: "ELF Section Header".into(),
+                name: format!("ELF Section Header for {name}"),
                 bytes_start: section_headers_start + i as i64 * header.e_shentsize as i64,
                 bytes_end: section_headers_start + (i as i64 + 1) * header.e_shentsize as i64,
                 children: vec![],
@@ -49,12 +62,12 @@ impl ExecutableFile {
             });
         }
 
-        for section_header in SectionHeader::from_bytes(
-            &file_bytes[header.e_shoff as usize..],
-            header.e_shnum as usize,
-        ) {
+        for (i, section_header) in section_headers.iter().enumerate() {
             children.push(FileNode {
-                name: "ELF Section".into(),
+                name: section_name_table
+                    .get(i)
+                    .cloned()
+                    .unwrap_or_else(|| "Unnamed section".to_owned()),
                 bytes_start: section_header.sh_offset as i64,
                 bytes_end: section_header.sh_offset as i64 + section_header.sh_size as i64,
                 children: vec![],
@@ -122,6 +135,12 @@ impl ExecutableFile {
             inspector_collapsed: false,
         }
     }
+}
+
+fn parse_str_table(data: &[u8]) -> Vec<String> {
+    data.split(|c| *c == 0)
+        .map(|x| String::from_utf8(x.to_vec()).unwrap())
+        .collect()
 }
 
 pub struct FileNode {
