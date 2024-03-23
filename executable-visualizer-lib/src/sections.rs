@@ -1,3 +1,4 @@
+use anyhow::{anyhow, Result};
 use goblin::elf64::{header::Header, section_header::SectionHeader};
 use std::{env::current_exe, path::Path};
 
@@ -14,7 +15,15 @@ impl ExecutableFile {
 
     pub fn load(path: &Path) -> Self {
         let file_bytes = std::fs::read(path).unwrap();
-        let header = Header::parse(&file_bytes).unwrap();
+        let name = path.file_name().unwrap().to_str().unwrap().to_owned();
+        Self::load_from_bytes(name, &file_bytes).unwrap()
+    }
+
+    pub fn load_from_bytes(name: String, data: &[u8]) -> Result<Self> {
+        if data.len() < 4 || data[0..4] != [0x7f, b'E', b'L', b'F'] {
+            return Err(anyhow!("Magic ELF bytes were wrong."));
+        }
+        let header = Header::parse(data).unwrap();
 
         let mut children = vec![];
         children.push(FileNode {
@@ -37,14 +46,12 @@ impl ExecutableFile {
         // The program headers will point at parts of the file, telling the os which parts to load into specific locations in memory.
         // We dont parse or take that into account at all since that is just a subset of the data defined by the elf sections.
 
-        let section_headers = SectionHeader::from_bytes(
-            &file_bytes[header.e_shoff as usize..],
-            header.e_shnum as usize,
-        );
+        let section_headers =
+            SectionHeader::from_bytes(&data[header.e_shoff as usize..], header.e_shnum as usize);
         let str_table_header = section_headers[header.e_shstrndx as usize];
         let str_table_start = str_table_header.sh_offset as usize;
         let str_table_end = str_table_start + str_table_header.sh_size as usize;
-        let section_name_table = parse_str_table(&file_bytes[str_table_start..str_table_end]);
+        let section_name_table = parse_str_table(&data[str_table_start..str_table_end]);
 
         // These headers are usually at the very end of the file
         let section_headers_start = header.e_shoff as i64;
@@ -78,16 +85,16 @@ impl ExecutableFile {
         let root = FileNode {
             name: "ELF file".into(),
             bytes_start: 0,
-            bytes_end: file_bytes.len() as i64,
+            bytes_end: data.len() as i64,
             children,
             ty: SectionType::Root,
         };
 
-        ExecutableFile {
-            name: path.file_name().unwrap().to_str().unwrap().to_owned(),
+        Ok(ExecutableFile {
+            name,
             root,
             inspector_collapsed: false,
-        }
+        })
     }
 
     pub fn load_dummy() -> Self {

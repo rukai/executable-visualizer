@@ -1,3 +1,6 @@
 [workspace]
-members = [ "executable-visualizer" ]
+members = [
+  "executable-visualizer-lib",
+  "executable-visualizer",
+]
 resolver = "2"

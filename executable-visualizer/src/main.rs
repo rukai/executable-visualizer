@@ -1,11 +1,7 @@
 #![forbid(unsafe_code)]
 
-mod app;
-mod inspector;
-mod sections;
-
-use app::ExampleApp;
-use sections::ExecutableFile;
+use executable_visualizer_lib::app::ExampleApp;
+use executable_visualizer_lib::sections::ExecutableFile;
 
 fn main() -> eframe::Result<()> {
     let files = vec![ExecutableFile::load_self(), ExecutableFile::load_dummy()];

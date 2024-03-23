@@ -38,12 +38,13 @@ jobs:
       id: setup_pages
     - name: Setup web_root
       run: |
-        # Build binary for analysis
-        cargo build --release
-        # cargo run-wasm --release --build-only
+        cd web
+        cargo run-wasm --release --build-only --package executable-visualizer-web
+        cp -r target/wasm-examples/executable-visualizer-web ../web_root
+        cd ..
 
-        mkdir web_root
-        cp target/release/executable-visualizer web_root/example
+        cargo build --release
+        cp target/release/executable-visualizer web_root/x86-executable-visualizer
 
     - name: Upload pages
       uses: actions/upload-pages-artifact@v3

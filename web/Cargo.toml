@@ -1,0 +1,6 @@
+[workspace]
+members = [
+  "executable-visualizer-web",
+  "run-wasm",
+]
+resolver = "2"
