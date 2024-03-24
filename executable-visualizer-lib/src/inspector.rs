@@ -66,6 +66,8 @@ pub struct Options {
 
     pub sorting: Sorting,
 
+    pub to_scale: bool,
+
     /// Set when user clicks a scope.
     /// First part is `now()`, second is range.
     #[cfg_attr(feature = "serde", serde(skip))]
@@ -90,6 +92,7 @@ impl Default for Options {
             frame_width: 10.0,
 
             sorting: Default::default(),
+            to_scale: true,
 
             zoom_to_relative_bytes_range: None,
         }
@@ -142,6 +145,8 @@ pub fn ui(ui: &mut egui::Ui, options: &mut Options, files: &mut [ExecutableFile]
                     );
 
                 ui.separator();
+
+                ui.checkbox(&mut options.to_scale, "Draw to scale");
 
                 options.sorting.ui(ui);
             });
@@ -233,7 +238,15 @@ fn ui_canvas(
         cursor_y += info.text_height;
 
         if !file.inspector_collapsed {
-            paint_scope(info, options, 0, cursor_y, &file.root);
+            paint_scope(
+                info,
+                options,
+                0,
+                cursor_y,
+                &file.root,
+                file.root.bytes_start,
+                file.root.bytes_end,
+            );
 
             let max_depth = 6;
             cursor_y += max_depth as f32 * (options.rect_height + options.spacing);
@@ -421,9 +434,26 @@ fn grid_text(bytes: i64) -> String {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn paint_record(info: &Info, options: &mut Options, top_y: f32, section: &FileNode) -> PaintResult {
-    let start_x = info.point_from_bytes(options, section.bytes_start);
-    let stop_x = info.point_from_bytes(options, section.bytes_end);
+fn paint_record(
+    info: &Info,
+    options: &mut Options,
+    top_y: f32,
+    section: &FileNode,
+    unscaled_start: i64,
+    unscaled_end: i64,
+) -> PaintResult {
+    let bytes_start = if options.to_scale {
+        section.bytes_start
+    } else {
+        unscaled_start
+    };
+    let bytes_end = if options.to_scale {
+        section.bytes_end
+    } else {
+        unscaled_end
+    };
+    let start_x = info.point_from_bytes(options, bytes_start);
+    let stop_x = info.point_from_bytes(options, bytes_end);
     if info.canvas.max.x < start_x
         || stop_x < info.canvas.min.x
         || stop_x - start_x < options.cull_width
@@ -514,14 +544,25 @@ fn paint_scope(
     depth: usize,
     min_y: f32,
     section: &FileNode,
+    unscaled_start: i64,
+    unscaled_end: i64,
 ) -> PaintResult {
     let top_y = min_y + (depth as f32) * (options.rect_height + options.spacing);
 
-    let result = paint_record(info, options, top_y, section);
+    let result = paint_record(info, options, top_y, section, unscaled_start, unscaled_end);
 
     if result != PaintResult::Culled {
-        for section in &section.children {
-            paint_scope(info, options, depth + 1, min_y, section);
+        for (i, child) in section.children.iter().enumerate() {
+            let width = (unscaled_end - unscaled_start) / section.children.len() as i64;
+            paint_scope(
+                info,
+                options,
+                depth + 1,
+                min_y,
+                child,
+                section.bytes_start + i as i64 * width,
+                section.bytes_start + (i as i64 + 1) * width,
+            );
         }
 
         if result == PaintResult::Hovered {
@@ -542,9 +583,8 @@ fn paint_section_details(ui: &mut Ui, section: &FileNode) {
             ui.monospace(&section.name);
             ui.end_row();
 
-            let len = section.bytes_end - section.bytes_start;
             ui.monospace("bytes");
-            ui.monospace(format!("{}", len));
+            ui.monospace(format!("{}", section.len()));
             ui.end_row();
 
             for (name, value) in &section.notes {

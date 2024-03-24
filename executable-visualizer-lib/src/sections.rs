@@ -125,7 +125,7 @@ impl ExecutableFile {
             });
         }
 
-        let root = FileNode {
+        let mut root = FileNode {
             name: "ELF file".into(),
             bytes_start: 0,
             bytes_end: data.len() as i64,
@@ -133,6 +133,7 @@ impl ExecutableFile {
             children,
             ty: SectionType::Root,
         };
+        root.sort();
 
         Ok(ExecutableFile {
             name,
@@ -155,6 +156,20 @@ pub struct FileNode {
     pub ty: SectionType,
     pub notes: Vec<(String, String)>,
     pub children: Vec<FileNode>,
+}
+
+impl FileNode {
+    #[allow(clippy::len_without_is_empty)]
+    pub fn len(&self) -> u64 {
+        (self.bytes_end - self.bytes_start) as u64
+    }
+
+    fn sort(&mut self) {
+        self.children.sort_by_key(|x| x.bytes_start);
+        for child in &mut self.children {
+            child.sort();
+        }
+    }
 }
 
 pub enum SectionType {
