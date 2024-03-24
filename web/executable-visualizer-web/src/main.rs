@@ -42,12 +42,7 @@ async fn run() {
         files.push(file);
     }
 
-    let app = ExampleApp {
-        inspector_options: Default::default(),
-        view: Default::default(),
-        files,
-    };
-
+    let app = ExampleApp::new(files);
     let runner = WebRunner::new();
     runner
         .start(

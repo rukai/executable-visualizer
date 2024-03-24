@@ -10,13 +10,13 @@ pub struct ExecutableFile {
 
 impl ExecutableFile {
     pub fn load_self() -> Self {
-        Self::load(&current_exe().unwrap())
+        Self::load(&current_exe().unwrap()).unwrap()
     }
 
-    pub fn load(path: &Path) -> Self {
+    pub fn load(path: &Path) -> Result<Self> {
         let file_bytes = std::fs::read(path).unwrap();
         let name = path.file_name().unwrap().to_str().unwrap().to_owned();
-        Self::load_from_bytes(name, &file_bytes).unwrap()
+        Self::load_from_bytes(name, &file_bytes)
     }
 
     pub fn load_from_bytes(name: String, data: &[u8]) -> Result<Self> {
