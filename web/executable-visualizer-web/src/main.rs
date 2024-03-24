@@ -35,7 +35,7 @@ async fn run() {
         .style()
         .set_css_text("margin: 0; height: 100%; width: 100%");
 
-    let mut files = vec![ExecutableFile::load_dummy()];
+    let mut files = vec![];
     let data = load_example_binary("x86-executable-visualizer").await;
     if let Ok(file) = ExecutableFile::load_from_bytes("x86-executable-visualizer".to_owned(), &data)
     {

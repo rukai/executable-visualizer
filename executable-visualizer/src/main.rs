@@ -4,7 +4,7 @@ use executable_visualizer_lib::app::ExampleApp;
 use executable_visualizer_lib::sections::ExecutableFile;
 
 fn main() -> eframe::Result<()> {
-    let files = vec![ExecutableFile::load_self(), ExecutableFile::load_dummy()];
+    let files = vec![ExecutableFile::load_self()];
     let app = ExampleApp::new(files);
 
     let native_options = eframe::NativeOptions {

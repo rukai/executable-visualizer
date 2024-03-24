@@ -96,52 +96,6 @@ impl ExecutableFile {
             inspector_collapsed: false,
         })
     }
-
-    pub fn load_dummy() -> Self {
-        let root = FileNode {
-            name: "foo".into(),
-            bytes_start: 0,
-            bytes_end: 1_000_000,
-            children: vec![
-                FileNode {
-                    name: "child1".into(),
-                    bytes_start: 0,
-                    bytes_end: 10,
-                    children: vec![],
-                    ty: SectionType::ElfHeader,
-                },
-                FileNode {
-                    name: "child2".into(),
-                    bytes_start: 10,
-                    bytes_end: 1_000_000,
-                    children: vec![
-                        FileNode {
-                            name: "child21".into(),
-                            bytes_start: 10,
-                            bytes_end: 100_000,
-                            children: vec![],
-                            ty: SectionType::ElfHeader,
-                        },
-                        FileNode {
-                            name: "child22".into(),
-                            bytes_start: 100_000,
-                            bytes_end: 1_000_000,
-                            children: vec![],
-                            ty: SectionType::ElfHeader,
-                        },
-                    ],
-                    ty: SectionType::Text,
-                },
-            ],
-            ty: SectionType::ElfHeader,
-        };
-
-        ExecutableFile {
-            name: "dummy file".to_owned(),
-            root,
-            inspector_collapsed: false,
-        }
-    }
 }
 
 fn parse_str_table(data: &[u8]) -> Vec<String> {
