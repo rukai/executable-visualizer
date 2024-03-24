@@ -1,5 +1,8 @@
 use anyhow::{anyhow, Result};
-use goblin::elf64::{header::Header, section_header::SectionHeader};
+use goblin::{
+    elf::section_header::{shf_to_str, sht_to_str, SHF_FLAGS, SHT_DYNAMIC, SHT_REL, SHT_RELA},
+    elf64::{header::Header, section_header::SectionHeader},
+};
 use std::{env::current_exe, path::Path};
 
 pub struct ExecutableFile {
@@ -31,6 +34,7 @@ impl ExecutableFile {
             bytes_start: 0,
             bytes_end: header.e_ehsize as i64,
             children: vec![],
+            notes: vec![],
             ty: SectionType::ElfHeader,
         });
         for i in 0..header.e_phnum {
@@ -39,6 +43,7 @@ impl ExecutableFile {
                 bytes_start: header.e_phoff as i64 + i as i64 * header.e_phentsize as i64,
                 bytes_end: header.e_phoff as i64 + (i as i64 + 1) * header.e_phentsize as i64,
                 children: vec![],
+                notes: vec![],
                 ty: SectionType::ElfProgramHeader,
             });
         }
@@ -65,11 +70,48 @@ impl ExecutableFile {
                 bytes_start: section_headers_start + i as i64 * header.e_shentsize as i64,
                 bytes_end: section_headers_start + (i as i64 + 1) * header.e_shentsize as i64,
                 children: vec![],
+                notes: vec![],
                 ty: SectionType::ElfSectionHeader,
             });
         }
 
         for (i, section_header) in section_headers.iter().enumerate() {
+            // https://docs.oracle.com/cd/E19683-01/816-1386/chapter6-94076/index.html
+
+            let ty = sht_to_str(section_header.sh_type).to_owned();
+            let mut flags = String::new();
+            for flag in SHF_FLAGS {
+                if section_header.sh_flags & flag as u64 != 0 {
+                    if !flags.is_empty() {
+                        flags.push('|')
+                    }
+                    flags.push_str(shf_to_str(flag));
+                }
+            }
+            if flags.is_empty() {
+                flags = "NONE".to_owned();
+            }
+
+            let address = format!("0x{:x}", section_header.sh_addr);
+            let address_alignment = format!("0x{:x}", section_header.sh_addralign);
+            let mut notes = vec![
+                ("type".into(), ty),
+                ("flags".into(), flags),
+                ("address".into(), address),
+                ("address alignment".into(), address_alignment),
+            ];
+
+            // TODO: and many other sh_link handling https://docs.oracle.com/cd/E19683-01/816-1386/6m7qcoblj/index.html#chapter6-47976
+            let name = section_name_table
+                .get(section_header.sh_link as usize)
+                .cloned()
+                .unwrap_or_else(|| "Unnamed section".to_owned());
+            if section_header.sh_type == SHT_DYNAMIC {
+                notes.push(("string table in section".into(), name));
+            } else if section_header.sh_type == SHT_REL || section_header.sh_type == SHT_RELA {
+                notes.push(("symbol table in section".into(), name));
+            }
+
             children.push(FileNode {
                 name: section_name_table
                     .get(i)
@@ -78,6 +120,7 @@ impl ExecutableFile {
                 bytes_start: section_header.sh_offset as i64,
                 bytes_end: section_header.sh_offset as i64 + section_header.sh_size as i64,
                 children: vec![],
+                notes,
                 ty: SectionType::ElfSectionHeader,
             });
         }
@@ -86,6 +129,7 @@ impl ExecutableFile {
             name: "ELF file".into(),
             bytes_start: 0,
             bytes_end: data.len() as i64,
+            notes: vec![],
             children,
             ty: SectionType::Root,
         };
@@ -109,6 +153,7 @@ pub struct FileNode {
     pub bytes_start: i64,
     pub bytes_end: i64,
     pub ty: SectionType,
+    pub notes: Vec<(String, String)>,
     pub children: Vec<FileNode>,
 }
 

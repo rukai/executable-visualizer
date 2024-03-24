@@ -537,13 +537,21 @@ fn paint_section_details(ui: &mut Ui, section: &FileNode) {
     egui::Grid::new("section_details_tooltip")
         .num_columns(2)
         .show(ui, |ui| {
+            // show name because sometimes the name is truncated because the section is small
             ui.monospace("name");
             ui.monospace(&section.name);
             ui.end_row();
 
+            let len = section.bytes_end - section.bytes_start;
             ui.monospace("bytes");
-            ui.monospace(format!("{}", section.bytes_end - section.bytes_start));
+            ui.monospace(format!("{}", len));
             ui.end_row();
+
+            for (name, value) in &section.notes {
+                ui.monospace(name);
+                ui.monospace(value);
+                ui.end_row();
+            }
         });
 }
 
