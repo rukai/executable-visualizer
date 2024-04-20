@@ -56,15 +56,12 @@ impl ExecutableFile {
         let str_table_header = section_headers[header.e_shstrndx as usize];
         let str_table_start = str_table_header.sh_offset as usize;
         let str_table_end = str_table_start + str_table_header.sh_size as usize;
-        let section_name_table = parse_str_table(&data[str_table_start..str_table_end]);
+        let section_name_table = &data[str_table_start..str_table_end];
 
         // These headers are usually at the very end of the file
         let section_headers_start = header.e_shoff as i64;
-        for i in 0..header.e_shnum {
-            let name = section_name_table
-                .get(i as usize)
-                .cloned()
-                .unwrap_or_else(|| "Unnamed section".to_owned());
+        for (i, section_header) in section_headers.iter().enumerate() {
+            let name = parse_str_table(section_name_table, section_header.sh_name);
             children.push(FileNode {
                 name: format!("ELF Section Header for {name}"),
                 bytes_start: section_headers_start + i as i64 * header.e_shentsize as i64,
@@ -75,7 +72,7 @@ impl ExecutableFile {
             });
         }
 
-        for (i, section_header) in section_headers.iter().enumerate() {
+        for section_header in &section_headers {
             // https://docs.oracle.com/cd/E19683-01/816-1386/chapter6-94076/index.html
 
             let ty = sht_to_str(section_header.sh_type).to_owned();
@@ -102,27 +99,80 @@ impl ExecutableFile {
             ];
 
             // TODO: and many other sh_link handling https://docs.oracle.com/cd/E19683-01/816-1386/6m7qcoblj/index.html#chapter6-47976
-            let name = section_name_table
+            let link_name = section_headers
                 .get(section_header.sh_link as usize)
-                .cloned()
-                .unwrap_or_else(|| "Unnamed section".to_owned());
+                .map(|section_header| parse_str_table(section_name_table, section_header.sh_name))
+                .unwrap_or_else(|| "bad link section".to_owned());
             if section_header.sh_type == SHT_DYNAMIC {
-                notes.push(("string table in section".into(), name));
+                notes.push(("string table in section".into(), link_name));
             } else if section_header.sh_type == SHT_REL || section_header.sh_type == SHT_RELA {
-                notes.push(("symbol table in section".into(), name));
+                notes.push(("symbol table in section".into(), link_name));
+            }
+
+            let bytes_start = section_header.sh_offset as i64;
+            let mut bytes_end = section_header.sh_offset as i64 + section_header.sh_size as i64;
+            if bytes_start == bytes_end {
+                bytes_end += 1;
+                notes.push((
+                    "".into(),
+                    "This section is actually 0 bytes, but is drawn 1 byte wide so that it will show up"
+                        .into(),
+                ));
             }
 
             children.push(FileNode {
-                name: section_name_table
-                    .get(i)
-                    .cloned()
-                    .unwrap_or_else(|| "Unnamed section".to_owned()),
-                bytes_start: section_header.sh_offset as i64,
-                bytes_end: section_header.sh_offset as i64 + section_header.sh_size as i64,
+                name: parse_str_table(section_name_table, section_header.sh_name),
+                bytes_start,
+                bytes_end,
                 children: vec![],
                 notes,
                 ty: SectionType::ElfSectionHeader,
             });
+        }
+
+        for (i, child) in children.iter_mut().enumerate() {
+            child.notes.push(("i".into(), format!("{i}")));
+        }
+
+        // Some sections will overlap each other.
+        // To ensure they are completely drawn render the smallest section as a child of the bigger section.
+        // TODO: or something like that...
+        // The problem is currently ill-defined, so I need to better define and improve our handling here.
+        // For example .bss section still overlaps
+        // Each child is immediately added as a child of another node when found to overlap.
+        // If its new parent already has children:
+        // * If overlap with any children:
+        //   + if smaller become its child
+        //   + if larger take its spot
+        // * If no overlap with children join as sibling.
+        let mut duplicates: Vec<Vec<FileNode>> = vec![];
+        'outer: loop {
+            for i in 0..children.len() {
+                let mut found_duplicates = vec![];
+                for (inner_i, inner_child) in children.iter().enumerate() {
+                    if i != inner_i && children[i].overlaps(inner_child) {
+                        found_duplicates.push(inner_i)
+                    }
+                }
+                if !found_duplicates.is_empty() {
+                    found_duplicates.push(i);
+                    found_duplicates.sort();
+                    let mut taken = vec![];
+                    for found_i in found_duplicates.iter().rev() {
+                        taken.push(children.remove(*found_i));
+                    }
+                    duplicates.push(taken);
+                    continue 'outer;
+                }
+            }
+            break;
+        }
+
+        for mut duplicates in duplicates {
+            duplicates.sort_by_key(|x| x.bytes_end - x.bytes_start);
+            let mut base = duplicates.pop().unwrap();
+            base.children.extend(duplicates);
+            children.push(base);
         }
 
         let mut root = FileNode {
@@ -143,12 +193,18 @@ impl ExecutableFile {
     }
 }
 
-fn parse_str_table(data: &[u8]) -> Vec<String> {
-    data.split(|c| *c == 0)
-        .map(|x| String::from_utf8(x.to_vec()).unwrap())
-        .collect()
+fn parse_str_table(data: &[u8], offset: u32) -> String {
+    if offset as usize > data.len() {
+        return "sh_name out of bounds of string table".to_owned();
+    }
+    std::ffi::CStr::from_bytes_until_nul(&data[offset as usize..])
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned()
 }
 
+#[derive(Debug)]
 pub struct FileNode {
     pub name: String,
     pub bytes_start: i64,
@@ -170,8 +226,15 @@ impl FileNode {
             child.sort();
         }
     }
+
+    #[rustfmt::skip]
+    fn overlaps(&self, other: &Self) -> bool {
+        self.bytes_start > other.bytes_start && self.bytes_start < other.bytes_start + other.len() as i64 ||
+        self.bytes_end   > other.bytes_start && self.bytes_end   < other.bytes_start + other.len() as i64
+    }
 }
 
+#[derive(Debug)]
 pub enum SectionType {
     ElfHeader,
     ElfSectionHeader,
