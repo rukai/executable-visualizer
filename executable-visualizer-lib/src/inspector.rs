@@ -583,8 +583,12 @@ fn paint_section_details(ui: &mut Ui, section: &FileNode) {
             ui.monospace(&section.name);
             ui.end_row();
 
-            ui.monospace("bytes");
-            ui.monospace(format!("{}", section.len()));
+            ui.monospace("file start");
+            ui.monospace(format!("0x{:x}", section.bytes_start));
+            ui.end_row();
+
+            ui.monospace("len");
+            ui.monospace(format!("0x{:x}", section.len()));
             ui.end_row();
 
             for (name, value) in &section.notes {

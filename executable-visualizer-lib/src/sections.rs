@@ -94,7 +94,7 @@ impl ExecutableFile {
             let mut notes = vec![
                 ("type".into(), ty),
                 ("flags".into(), flags),
-                ("address".into(), address),
+                ("ram start".into(), address),
                 ("address alignment".into(), address_alignment),
             ];
 
@@ -128,10 +128,6 @@ impl ExecutableFile {
                 notes,
                 ty: SectionType::ElfSectionHeader,
             });
-        }
-
-        for (i, child) in children.iter_mut().enumerate() {
-            child.notes.push(("i".into(), format!("{i}")));
         }
 
         // Some sections will overlap each other.
