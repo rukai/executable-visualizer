@@ -145,34 +145,38 @@ impl ExecutableFile {
         //   + if smaller become its child
         //   + if larger take its spot
         // * If no overlap with children join as sibling.
-        let mut duplicates: Vec<Vec<FileNode>> = vec![];
-        'outer: loop {
-            for i in 0..children.len() {
-                let mut found_duplicates = vec![];
-                for (inner_i, inner_child) in children.iter().enumerate() {
-                    if i != inner_i && children[i].overlaps(inner_child) {
-                        found_duplicates.push(inner_i)
-                    }
-                }
-                if !found_duplicates.is_empty() {
-                    found_duplicates.push(i);
-                    found_duplicates.sort();
-                    let mut taken = vec![];
-                    for found_i in found_duplicates.iter().rev() {
-                        taken.push(children.remove(*found_i));
-                    }
-                    duplicates.push(taken);
-                    continue 'outer;
+        let mut i = 0;
+        loop {
+            let mut found = None;
+            for (other_i, other_child) in children.iter().enumerate() {
+                if i != other_i && children[i].overlaps(other_child) {
+                    found = Some((i, other_i));
                 }
             }
-            break;
-        }
+            if let Some((base_i, other_i)) = found {
+                // Need to remove the later index first to maintain index validity
+                let (mut child1, mut child2) = if base_i < other_i {
+                    (children.remove(other_i), children.remove(base_i))
+                } else {
+                    (children.remove(base_i), children.remove(other_i))
+                };
+                let child = if child1.len() > child2.len() {
+                    child1.children.push(child2);
+                    child1
+                } else {
+                    child2.children.push(child1);
+                    child2
+                };
+                children.push(child);
 
-        for mut duplicates in duplicates {
-            duplicates.sort_by_key(|x| x.bytes_end - x.bytes_start);
-            let mut base = duplicates.pop().unwrap();
-            base.children.extend(duplicates);
-            children.push(base);
+                // restart from beginning
+                i = 0;
+            } else {
+                i += 1;
+                if i + 1 > children.len() {
+                    break;
+                }
+            }
         }
 
         let mut root = FileNode {
