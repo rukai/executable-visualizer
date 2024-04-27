@@ -1,12 +1,16 @@
 use anyhow::{anyhow, Result};
 use goblin::{
-    elf::section_header::{shf_to_str, sht_to_str, SHF_FLAGS, SHT_DYNAMIC, SHT_REL, SHT_RELA},
+    elf::section_header::{
+        shf_to_str, sht_to_str, SHF_ALLOC, SHF_FLAGS, SHT_DYNAMIC, SHT_NOBITS, SHT_NULL, SHT_REL,
+        SHT_RELA,
+    },
     elf64::{header::Header, section_header::SectionHeader},
 };
 use std::{env::current_exe, path::Path};
 
 pub struct ExecutableFile {
-    pub root: FileNode,
+    pub file_root: FileNode,
+    pub ram_root: FileNode,
     pub inspector_collapsed: bool,
     pub name: String,
 }
@@ -28,20 +32,31 @@ impl ExecutableFile {
         }
         let header = Header::parse(data).unwrap();
 
-        let mut children = vec![];
-        children.push(FileNode {
+        let mut file_children = vec![];
+        let mut ram_children = vec![];
+        file_children.push(FileNode {
             name: "ELF Header".into(),
             bytes_start: 0,
             bytes_end: header.e_ehsize as i64,
+            ram_bytes_start: 0,
+            ram_bytes_end: 0,
+            file_bytes_start: 0,
+            file_bytes_end: header.e_ehsize as i64,
             children: vec![],
             notes: vec![],
             ty: SectionType::ElfHeader,
         });
         for i in 0..header.e_phnum {
-            children.push(FileNode {
+            let bytes_start = header.e_phoff as i64 + i as i64 * header.e_phentsize as i64;
+            let bytes_end = header.e_phoff as i64 + (i as i64 + 1) * header.e_phentsize as i64;
+            file_children.push(FileNode {
                 name: format!("Program Header Segment #{i}"),
-                bytes_start: header.e_phoff as i64 + i as i64 * header.e_phentsize as i64,
-                bytes_end: header.e_phoff as i64 + (i as i64 + 1) * header.e_phentsize as i64,
+                bytes_start,
+                bytes_end,
+                ram_bytes_start: 0,
+                ram_bytes_end: 0,
+                file_bytes_start: bytes_start,
+                file_bytes_end: bytes_end,
                 children: vec![],
                 notes: vec![],
                 ty: SectionType::ElfProgramHeader,
@@ -60,12 +75,19 @@ impl ExecutableFile {
 
         // These headers are usually at the very end of the file
         let section_headers_start = header.e_shoff as i64;
+
         for (i, section_header) in section_headers.iter().enumerate() {
             let name = parse_str_table(section_name_table, section_header.sh_name);
-            children.push(FileNode {
+            let bytes_start = section_headers_start + i as i64 * header.e_shentsize as i64;
+            let bytes_end = section_headers_start + (i as i64 + 1) * header.e_shentsize as i64;
+            file_children.push(FileNode {
                 name: format!("ELF Section Header for {name}"),
-                bytes_start: section_headers_start + i as i64 * header.e_shentsize as i64,
-                bytes_end: section_headers_start + (i as i64 + 1) * header.e_shentsize as i64,
+                bytes_start,
+                bytes_end,
+                ram_bytes_start: 0,
+                ram_bytes_end: 0,
+                file_bytes_start: bytes_start,
+                file_bytes_end: bytes_end,
                 children: vec![],
                 notes: vec![],
                 ty: SectionType::ElfSectionHeader,
@@ -89,12 +111,12 @@ impl ExecutableFile {
                 flags = "NONE".to_owned();
             }
 
-            let address = format!("0x{:x}", section_header.sh_addr);
+            let ram_bytes_start = section_header.sh_addr as i64;
+            let ram_bytes_end = (section_header.sh_addr + section_header.sh_size) as i64;
             let address_alignment = format!("0x{:x}", section_header.sh_addralign);
             let mut notes = vec![
                 ("type".into(), ty),
                 ("flags".into(), flags),
-                ("ram start".into(), address),
                 ("address alignment".into(), address_alignment),
             ];
 
@@ -109,85 +131,79 @@ impl ExecutableFile {
                 notes.push(("symbol table in section".into(), link_name));
             }
 
-            let bytes_start = section_header.sh_offset as i64;
-            let mut bytes_end = section_header.sh_offset as i64 + section_header.sh_size as i64;
-            if bytes_start == bytes_end {
-                bytes_end += 1;
-                notes.push((
-                    "".into(),
-                    "This section is actually 0 bytes, but is drawn 1 byte wide so that it will show up"
-                        .into(),
-                ));
-            }
+            let file_bytes_start = section_header.sh_offset as i64;
+            let file_bytes_end = section_header.sh_offset as i64 + section_header.sh_size as i64;
+            let name = parse_str_table(section_name_table, section_header.sh_name);
 
-            children.push(FileNode {
-                name: parse_str_table(section_name_table, section_header.sh_name),
-                bytes_start,
-                bytes_end,
-                children: vec![],
-                notes,
-                ty: SectionType::ElfSectionHeader,
-            });
+            if section_header.sh_flags & SHF_ALLOC as u64 != 0 {
+                ram_children.push(FileNode {
+                    name: name.clone(),
+                    bytes_start: ram_bytes_start,
+                    bytes_end: ram_bytes_end,
+                    ram_bytes_start,
+                    ram_bytes_end,
+                    file_bytes_start,
+                    file_bytes_end,
+                    children: vec![],
+                    notes: notes.clone(),
+                    ty: SectionType::ElfSectionHeader,
+                });
+            }
+            if section_header.sh_type != SHT_NOBITS && section_header.sh_type != SHT_NULL {
+                file_children.push(FileNode {
+                    name,
+                    bytes_start: file_bytes_start,
+                    bytes_end: file_bytes_end,
+                    ram_bytes_start,
+                    ram_bytes_end,
+                    file_bytes_start,
+                    file_bytes_end,
+                    children: vec![],
+                    notes,
+                    ty: SectionType::ElfSectionHeader,
+                });
+            }
         }
-
-        // Some sections will overlap each other.
-        // To ensure they are completely drawn render the smallest section as a child of the bigger section.
-        // TODO: or something like that...
-        // The problem is currently ill-defined, so I need to better define and improve our handling here.
-        // For example .bss section still overlaps
-        // Each child is immediately added as a child of another node when found to overlap.
-        // If its new parent already has children:
-        // * If overlap with any children:
-        //   + if smaller become its child
-        //   + if larger take its spot
-        // * If no overlap with children join as sibling.
-        let mut i = 0;
-        loop {
-            let mut found = None;
-            for (other_i, other_child) in children.iter().enumerate() {
-                if i != other_i && children[i].overlaps(other_child) {
-                    found = Some((i, other_i));
-                }
-            }
-            if let Some((base_i, other_i)) = found {
-                // Need to remove the later index first to maintain index validity
-                let (mut child1, mut child2) = if base_i < other_i {
-                    (children.remove(other_i), children.remove(base_i))
-                } else {
-                    (children.remove(base_i), children.remove(other_i))
-                };
-                let child = if child1.len() > child2.len() {
-                    child1.children.push(child2);
-                    child1
-                } else {
-                    child2.children.push(child1);
-                    child2
-                };
-                children.push(child);
-
-                // restart from beginning
-                i = 0;
-            } else {
-                i += 1;
-                if i + 1 > children.len() {
-                    break;
+        for child in &file_children {
+            for other_child in &file_children {
+                if child.overlaps(other_child) {
+                    println!("WARN: Overlapping children found: {child:?} {other_child:?}");
                 }
             }
         }
 
-        let mut root = FileNode {
+        let mut file_root = FileNode {
             name: "ELF file".into(),
             bytes_start: 0,
             bytes_end: data.len() as i64,
+            ram_bytes_start: 0,
+            ram_bytes_end: 0, // TODO
+            file_bytes_start: 0,
+            file_bytes_end: data.len() as i64,
             notes: vec![],
-            children,
+            children: file_children,
             ty: SectionType::Root,
         };
-        root.sort();
+        file_root.sort();
+
+        let mut ram_root = FileNode {
+            name: "RAM".into(),
+            bytes_start: 0,
+            bytes_end: data.len() as i64,
+            ram_bytes_start: 0,
+            ram_bytes_end: 0, //TODO
+            file_bytes_start: 0,
+            file_bytes_end: data.len() as i64,
+            notes: vec![],
+            children: ram_children,
+            ty: SectionType::Root,
+        };
+        ram_root.sort();
 
         Ok(ExecutableFile {
             name,
-            root,
+            file_root,
+            ram_root,
             inspector_collapsed: false,
         })
     }
@@ -204,11 +220,15 @@ fn parse_str_table(data: &[u8], offset: u32) -> String {
         .to_owned()
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FileNode {
     pub name: String,
     pub bytes_start: i64,
     pub bytes_end: i64,
+    pub ram_bytes_start: i64,
+    pub ram_bytes_end: i64,
+    pub file_bytes_start: i64,
+    pub file_bytes_end: i64,
     pub ty: SectionType,
     pub notes: Vec<(String, String)>,
     pub children: Vec<FileNode>,
@@ -234,7 +254,7 @@ impl FileNode {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SectionType {
     ElfHeader,
     ElfSectionHeader,

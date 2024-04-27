@@ -165,7 +165,7 @@ pub fn ui(ui: &mut egui::Ui, options: &mut Options, files: &mut [ExecutableFile]
             let min_bytes = 0;
             let max_bytes = files
                 .iter()
-                .map(|file| file.root.bytes_end)
+                .map(|file| file.file_root.bytes_end)
                 .max()
                 .unwrap_or(100);
 
@@ -237,18 +237,29 @@ fn ui_canvas(
 
         cursor_y += info.text_height;
 
+        let max_depth = 6;
         if !file.inspector_collapsed {
             paint_scope(
                 info,
                 options,
                 0,
                 cursor_y,
-                &file.root,
-                file.root.bytes_start,
-                file.root.bytes_end,
+                &file.file_root,
+                file.file_root.bytes_start,
+                file.file_root.bytes_end,
             );
 
-            let max_depth = 6;
+            cursor_y += max_depth as f32 * (options.rect_height + options.spacing);
+
+            paint_scope(
+                info,
+                options,
+                0,
+                cursor_y,
+                &file.ram_root,
+                file.ram_root.bytes_start,
+                file.ram_root.bytes_end,
+            );
             cursor_y += max_depth as f32 * (options.rect_height + options.spacing);
         }
         cursor_y += info.text_height; // Extra spacing between binaries
@@ -584,7 +595,11 @@ fn paint_section_details(ui: &mut Ui, section: &FileNode) {
             ui.end_row();
 
             ui.monospace("file start");
-            ui.monospace(format!("0x{:x}", section.bytes_start));
+            ui.monospace(format!("0x{:x}", section.file_bytes_start));
+            ui.end_row();
+
+            ui.monospace("ram start");
+            ui.monospace(format!("0x{:x}", section.ram_bytes_start));
             ui.end_row();
 
             ui.monospace("len");
