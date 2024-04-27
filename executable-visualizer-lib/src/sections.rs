@@ -186,12 +186,13 @@ impl ExecutableFile {
         };
         file_root.sort();
 
+        let ram_bytes_end = ram_children.iter().map(|x| x.bytes_end).max().unwrap();
         let mut ram_root = FileNode {
             name: "RAM".into(),
             bytes_start: 0,
-            bytes_end: data.len() as i64,
+            bytes_end: ram_bytes_end,
             ram_bytes_start: 0,
-            ram_bytes_end: 0, //TODO
+            ram_bytes_end,
             file_bytes_start: 0,
             file_bytes_end: data.len() as i64,
             notes: vec![],
