@@ -37,18 +37,18 @@ impl ExecutableFile {
         file_children.push(FileNode {
             name: "ELF Header".into(),
             bytes_start: 0,
-            bytes_end: header.e_ehsize as i64,
+            bytes_end: header.e_ehsize as u64,
             ram_bytes_start: 0,
             ram_bytes_end: 0,
             file_bytes_start: 0,
-            file_bytes_end: header.e_ehsize as i64,
+            file_bytes_end: header.e_ehsize as u64,
             children: vec![],
             notes: vec![],
             ty: SectionType::ElfHeader,
         });
         for i in 0..header.e_phnum {
-            let bytes_start = header.e_phoff as i64 + i as i64 * header.e_phentsize as i64;
-            let bytes_end = header.e_phoff as i64 + (i as i64 + 1) * header.e_phentsize as i64;
+            let bytes_start = header.e_phoff + i as u64 * header.e_phentsize as u64;
+            let bytes_end = header.e_phoff + (i as u64 + 1) * header.e_phentsize as u64;
             file_children.push(FileNode {
                 name: format!("Program Header Segment #{i}"),
                 bytes_start,
@@ -74,12 +74,12 @@ impl ExecutableFile {
         let section_name_table = &data[str_table_start..str_table_end];
 
         // These headers are usually at the very end of the file
-        let section_headers_start = header.e_shoff as i64;
+        let section_headers_start = header.e_shoff;
 
         for (i, section_header) in section_headers.iter().enumerate() {
             let name = parse_str_table(section_name_table, section_header.sh_name);
-            let bytes_start = section_headers_start + i as i64 * header.e_shentsize as i64;
-            let bytes_end = section_headers_start + (i as i64 + 1) * header.e_shentsize as i64;
+            let bytes_start = section_headers_start + i as u64 * header.e_shentsize as u64;
+            let bytes_end = section_headers_start + (i as u64 + 1) * header.e_shentsize as u64;
             file_children.push(FileNode {
                 name: format!("ELF Section Header for {name}"),
                 bytes_start,
@@ -111,8 +111,8 @@ impl ExecutableFile {
                 flags = "NONE".to_owned();
             }
 
-            let ram_bytes_start = section_header.sh_addr as i64;
-            let ram_bytes_end = (section_header.sh_addr + section_header.sh_size) as i64;
+            let ram_bytes_start = section_header.sh_addr;
+            let ram_bytes_end = section_header.sh_addr + section_header.sh_size;
             let address_alignment = format!("0x{:x}", section_header.sh_addralign);
             let mut notes = vec![
                 ("type".into(), ty),
@@ -131,8 +131,8 @@ impl ExecutableFile {
                 notes.push(("symbol table in section".into(), link_name));
             }
 
-            let file_bytes_start = section_header.sh_offset as i64;
-            let file_bytes_end = section_header.sh_offset as i64 + section_header.sh_size as i64;
+            let file_bytes_start = section_header.sh_offset;
+            let file_bytes_end = section_header.sh_offset + section_header.sh_size;
             let name = parse_str_table(section_name_table, section_header.sh_name);
 
             if section_header.sh_flags & SHF_ALLOC as u64 != 0 {
@@ -175,11 +175,11 @@ impl ExecutableFile {
         let mut file_root = FileNode {
             name: "ELF file".into(),
             bytes_start: 0,
-            bytes_end: data.len() as i64,
+            bytes_end: data.len() as u64,
             ram_bytes_start: 0,
             ram_bytes_end: 0, // TODO
             file_bytes_start: 0,
-            file_bytes_end: data.len() as i64,
+            file_bytes_end: data.len() as u64,
             notes: vec![],
             children: file_children,
             ty: SectionType::Root,
@@ -194,7 +194,7 @@ impl ExecutableFile {
             ram_bytes_start: 0,
             ram_bytes_end,
             file_bytes_start: 0,
-            file_bytes_end: data.len() as i64,
+            file_bytes_end: data.len() as u64,
             notes: vec![],
             children: ram_children,
             ty: SectionType::Root,
@@ -224,12 +224,12 @@ fn parse_str_table(data: &[u8], offset: u32) -> String {
 #[derive(Debug, Clone)]
 pub struct FileNode {
     pub name: String,
-    pub bytes_start: i64,
-    pub bytes_end: i64,
-    pub ram_bytes_start: i64,
-    pub ram_bytes_end: i64,
-    pub file_bytes_start: i64,
-    pub file_bytes_end: i64,
+    pub bytes_start: u64,
+    pub bytes_end: u64,
+    pub ram_bytes_start: u64,
+    pub ram_bytes_end: u64,
+    pub file_bytes_start: u64,
+    pub file_bytes_end: u64,
     pub ty: SectionType,
     pub notes: Vec<(String, String)>,
     pub children: Vec<FileNode>,
@@ -238,7 +238,7 @@ pub struct FileNode {
 impl FileNode {
     #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> u64 {
-        (self.bytes_end - self.bytes_start) as u64
+        self.bytes_end - self.bytes_start
     }
 
     fn sort(&mut self) {
@@ -250,8 +250,8 @@ impl FileNode {
 
     #[rustfmt::skip]
     fn overlaps(&self, other: &Self) -> bool {
-        self.bytes_start > other.bytes_start && self.bytes_start < other.bytes_start + other.len() as i64 ||
-        self.bytes_end   > other.bytes_start && self.bytes_end   < other.bytes_start + other.len() as i64
+        self.bytes_start > other.bytes_start && self.bytes_start < other.bytes_start + other.len() ||
+        self.bytes_end   > other.bytes_start && self.bytes_end   < other.bytes_start + other.len()
     }
 }
 

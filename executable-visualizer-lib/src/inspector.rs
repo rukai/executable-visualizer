@@ -3,7 +3,7 @@ use egui::*;
 use std::vec;
 
 const HOVER_COLOR: Rgba = Rgba::from_rgb(0.8, 0.8, 0.8);
-type BytesCount = i64;
+type BytesCount = u64;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
@@ -432,7 +432,7 @@ fn paint_timeline(
     shapes
 }
 
-fn grid_text(bytes: i64) -> String {
+fn grid_text(bytes: u64) -> String {
     if bytes >= 1_000_000 {
         let mb = bytes as f32 / 1_000_000f32;
         format!("{mb} MB")
@@ -450,8 +450,8 @@ fn paint_record(
     options: &mut Options,
     top_y: f32,
     section: &FileNode,
-    unscaled_start: i64,
-    unscaled_end: i64,
+    unscaled_start: u64,
+    unscaled_end: u64,
 ) -> PaintResult {
     let bytes_start = if options.to_scale {
         section.bytes_start
@@ -555,8 +555,8 @@ fn paint_scope(
     depth: usize,
     min_y: f32,
     section: &FileNode,
-    unscaled_start: i64,
-    unscaled_end: i64,
+    unscaled_start: u64,
+    unscaled_end: u64,
 ) -> PaintResult {
     let top_y = min_y + (depth as f32) * (options.rect_height + options.spacing);
 
@@ -564,15 +564,15 @@ fn paint_scope(
 
     if result != PaintResult::Culled {
         for (i, child) in section.children.iter().enumerate() {
-            let width = (unscaled_end - unscaled_start) / section.children.len() as i64;
+            let width = (unscaled_end - unscaled_start) / section.children.len() as u64;
             paint_scope(
                 info,
                 options,
                 depth + 1,
                 min_y,
                 child,
-                section.bytes_start + i as i64 * width,
-                section.bytes_start + (i as i64 + 1) * width,
+                section.bytes_start + i as u64 * width,
+                section.bytes_start + (i as u64 + 1) * width,
             );
         }
 
